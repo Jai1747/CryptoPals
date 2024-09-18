@@ -188,3 +188,42 @@ std::string base64_encode(const std::string &in) {
 
     return out;
 }
+
+string xorPlaintext(string a, string b) {
+    string answer;
+    answer.resize(a.length());
+    for (int i = 0; i < a.length(); i++) {
+      answer[i] = static_cast<uint>(a[i] ^ b[i]);
+    }
+    return answer;
+}
+
+string aes_128_cbc_encrypt(string key, string iv, string plaintext) {
+    string ciphertext = "";
+    string new_plaintext = bytesToPlaintext(pkcs7(plaintext, 16));
+
+    for (int i = 0; i < new_plaintext.length(); i += 16) {
+        string temp_ciphertext;
+        string temp_plaintext = xorPlaintext(iv, new_plaintext.substr(i, 16));
+        
+        aes_128_ecb_encrypt(key, temp_plaintext, temp_ciphertext);
+        
+        iv = temp_ciphertext;
+        ciphertext += temp_ciphertext;
+    }
+    return ciphertext;
+}
+
+string aes_128_cbc_decrypt(string key, string iv, string ciphertext) {
+    string plaintext = "";
+
+    for (int i = 0; i < ciphertext.length(); i += iv.size()) {
+        string temp_plaintext = "";
+        string temp_ciphertext = ciphertext.substr(i, iv.size());
+
+        aes_128_ecb_decrypt(key, temp_ciphertext, temp_plaintext);
+        plaintext += xorPlaintext(iv, temp_plaintext);
+        iv = temp_ciphertext;
+    }
+    return plaintext;
+}
