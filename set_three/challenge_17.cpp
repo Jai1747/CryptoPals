@@ -65,15 +65,56 @@ string removePadding(string str) {
     return "FALSE";
 }
 
-bool checkPadding(string ciphertext) {
-    string plaintext = aes_128_cbc_decrypt(key, iv, ciphertext);
-
+bool checkPadding(string ciphertext, string iv) {
+  string plaintext = aes_128_cbc_decrypt(key, iv, ciphertext);
+  
     if (removePadding(plaintext) == "FALSE")
       return false;
 
     return true;
 }
 
+string decrypt(string block, string cipher) {
+    vector<uint8_t> answer(16);
+    int len = cipher.length();
+
+    for (int i = 1; i<=16; i++) {
+        string xoredCipher = cipher;
+        string xoredIv = iv;
+
+        if (len == 16) {
+           for (int k = 1; k < i; k++)
+            xoredIv[16 - k] = answer[16 - k] ^ (static_cast<uint8_t>(i));
+        } else {
+          for (int k = 1; k < i; k++)
+            xoredCipher[16- k] = answer[16 - k] ^ (static_cast<uint8_t>(i));   
+        }
+
+        for (int j = 0; j < 256; j++) {
+            string temp = (len==16 ? xoredIv : xoredCipher);
+            if (len == 16) {
+                temp[16 - i] = static_cast<uint8_t>(j);
+                if (checkPadding(cipher, temp)) {
+                    answer[16 - i] = static_cast<uint8_t>(j);
+                      // add check
+                    break;
+                }
+            } else {
+              temp[len - 16 - i] = static_cast<uint8_t>(j);
+              if (checkPadding(temp, iv)) {
+                    answer[16 - i] = static_cast<uint8_t>(j);
+                      // add check
+                    break;
+                 }
+            }
+        }
+        
+        cout << "Decrypted " << i << " th byte from right "
+             << static_cast<int>(answer[16 - i])
+            << dec << " " << answer[16-i] << endl;
+    }
+    return bytesToPlaintext(answer);
+}
 
 int main() {
     key = generateRandomString(16);
@@ -92,12 +133,29 @@ int main() {
 
     file.close();
 
-    string cipher = encrypt();
-    cipher[0] = 'b';
-    cout << checkPadding(cipher);
-    // for (int i = 0; i < 256; i++) {
-    //   string temp = cipher;
-    //   temp[cipher.length() - 1] = static_cast<uint8_t>(i);
-    //   cout << i << " " << checkPadding(temp) << endl;
-    // }
+    string ciphertext = encrypt();
+    string answer;
+    vector<string> decryptedBlocks;
+
+    int numBlock = ciphertext.length() / 16;
+    cout << "ciphertext has " << numBlock << " blocks" << endl;
+
+    for (int i = numBlock-1; i >= 0; i--) {
+      string block;
+
+      if (i == 0)
+        block = iv;
+      else
+        block = ciphertext.substr(16 * (i-1), 16);
+
+      string decryptedBlock = decrypt(block, ciphertext.substr(0, 16 * (i + 1)));
+      decryptedBlocks.push_back(decryptedBlock);
+      break;
+    }
+
+    // for (int i = 1; i <= numBlock; i++)
+    //   answer += decryptedBlocks[numBlock - i];
+
+    // cout << "decrypted plain text is " << answer << endl;
+    // cout << (answer==ciphertext? "yes" : "no" ) << endl;
 }
