@@ -1,9 +1,11 @@
 #include "library.h"
+#include <bitset>
 #include <cstdint>
 #include <ios>
 #include <iostream>
 #include <openssl/cryptoerr_legacy.h>
 #include <ostream>
+#include <stdexcept>
 #include <sys/types.h>
 #include <openssl/rand.h>
 #include <random>
@@ -72,22 +74,63 @@ u_int32_t random_uint32(MT19937& obj) {
 }
 
 
+u_int32_t inv_right(u_int32_t x, int num_shift) {
+    bitset<32> bits(x);
+    bitset<32> ans(x);
+
+    for (int i = 31-num_shift; i>=0; i--)
+      ans[i] = ans[i+num_shift] ^ bits[i];
+
+    uint32_t answer = static_cast<uint32_t>(ans.to_ulong());
+    return answer;
+}
+
+u_int32_t inv_left(u_int32_t x, int num_shift, u_int32_t magic_number) {
+    bitset<32> bits(x);
+    bitset<32> magic_bits(magic_number);
+    bitset<32> ans(x);
+
+    for (int i = num_shift; i < 32; i++)
+      ans[i] = bits[i] ^ (ans[i - num_shift] & magic_bits[i]);
+    
+    uint32_t answer = static_cast<uint32_t>(ans.to_ulong());
+    return answer;
+}
+
+u_int32_t untemper(u_int32_t x) {
+    x = inv_right(x, l);
+    x = inv_left(x, t, c);
+    x = inv_left(x, s, b);
+    x = inv_right(x, u);
+    return x;
+}
+
+
 int main() {
-    u_int32_t seed = 1131464071;
-    mt19937 mt(seed);
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<u_int32_t> dist(0, 0xFFFFFFFF);
+    u_int32_t seed = dist(gen);
 
     MT19937 obj;
     initialize_state(seed, obj);
-    vector<u_int32_t> myOutput;
     vector<u_int32_t> output;
 
-    for (int i = 0; i < 700; ++i) 
-        output.push_back(mt());
-        
-    for(int i=0;i<700;i++)
-      myOutput.push_back(random_uint32(obj));
+    for (int i = 0; i < n; i++)
+        output.push_back(random_uint32(obj));
 
-    for (int i = 0; i < 700; i++) {
-        cout << myOutput[i] << "\t" << output[i] << "\t" <<(myOutput[i]==output[i] ? "YES" : "NO") << endl;
+    MT19937 clone_obj;
+    clone_obj.mt_index = n;
+    for (int i = 0; i < n; i++)
+        clone_obj.state[i] = untemper(output[i]);
+
+    for (int i = 0; i < 1000; i++) {
+        u_int32_t actual = random_uint32(obj);
+        u_int32_t cloned = random_uint32(clone_obj);
+        cout << actual << " " <<  cloned << (actual==cloned ? " Yes" : " No") << endl;
     }
+
+   
 }
+
+    

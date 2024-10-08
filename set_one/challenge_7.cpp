@@ -102,5 +102,6 @@ int main() {
     aes_128_ecb_decrypt(key, ciphertext, plaintext);
 
     cout << "Decrypted message: " << plaintext << endl;
+    
     return 0;
 }
