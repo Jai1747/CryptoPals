@@ -14,6 +14,33 @@
 
 using namespace std;
 
+string key;
+
+void setKey() {
+    ifstream file("/usr/share/dict/words");
+    vector<string> words;
+    string word;
+
+    if (!file) {
+        cerr << "Error opening file." << endl;
+    }
+    while (file >> word) {
+        words.push_back(word);
+    }
+    file.close();
+
+    srand(time(nullptr));
+
+    if (!words.empty()) {
+        int randomIndex = rand() % words.size();
+        cout << "Random word: " << words[randomIndex] << endl;
+        key = words[randomIndex];
+    } else {
+        cerr << "No words found in the file." << endl;
+    }
+    return;
+}
+
 u_int32_t leftrotate(u_int32_t value, int n) {
   return (value << n) | (value >> (32-n)) & 0xFFFFFFFF;
 }
@@ -34,29 +61,29 @@ string bytesToHexString(uint32_t value) {
     return ss.str();
 }
 
-string sha1(string message) {
-    // intialize variables
-    uint32_t h0 = 0x67452301;
-    uint32_t h1 = 0xEFCDAB89;
-    uint32_t h2 = 0x98BADCFE;
-    uint32_t h3 = 0x10325476;
-    uint32_t h4 = 0xC3D2E1F0;
-    
-    int ml = message.length();
+string mdPad(string message, int offset) {
+    int ml = message.length() + offset;
     uint64_t ml_bits = ml * 8;
-
-    // pre-processing
     string preprocess = message;
-
     uint8_t zero = 0;
     uint8_t one = 128;
 
     preprocess += static_cast<unsigned char>(one);
-    while ((preprocess.length() * 8) % 512 != 448) {
+    while (((preprocess.length() + offset) * 8) % 512 != 448) {
         preprocess += static_cast<unsigned char>(zero);
     }
     for (int i = 7; i>=0; i--)
       preprocess += static_cast<unsigned char>((ml_bits >> (i * 8)) & 0xFF);
+    return preprocess;
+}
+
+string sha1(string preprocess, uint32_t H0, uint32_t H1, uint32_t H2, uint32_t H3, uint32_t H4) {
+    // intialize variables
+    uint32_t h0 = H0;
+    uint32_t h1 = H1;
+    uint32_t h2 = H2;
+    uint32_t h3 = H3;
+    uint32_t h4 = H4;
 
     // partition the message in successive 512-bit chunks
     int numBlocks = preprocess.length() * 8 / 512;
@@ -108,7 +135,6 @@ string sha1(string message) {
         b = a;
         a = temp;
       }
-
       // Add this chunk's hash to result so far:
       h0 += a;
       h1 += b;
@@ -139,15 +165,78 @@ string shaLib(const string& data) {
     return result.str();
 }
 
+string secretMAC(string message) {
+    string secret_message = key + message;
+    return shaLib(secret_message);
+}
 
+void printStringInHex(const string& str) {
+    for (unsigned char c : str) {
+        cout << hex << setw(2) << setfill('0') << static_cast<int>(c) << " ";
+    }
+    cout << dec << endl;
+}
 
 int main() {
-  string message = "abcquehhbfuybfdlhbo";
-  string hash = sha1(message);
-  string hashLib = shaLib(message);
+    setKey();
+    
 
-  cout << "message is " << message << endl
-       << "hash is    " << hashLib << endl
-       << "my hash is " << hash << endl;
-              
+    uint32_t H0 = 0x67452301;
+    uint32_t H1 = 0xEFCDAB89;
+    uint32_t H2 = 0x98BADCFE;
+    uint32_t H3 = 0x10325476;
+    uint32_t H4 = 0xC3D2E1F0;
+
+    string message = "comment1=cooking%20MCs;userdata=foo;comment2=%20like%20a%"
+                     "20pound%20of%20bacon";
+    string admin = ";admin=true";
+    string mac = secretMAC(message);
+
+    vector<uint8_t> macBytes = hexStringToBytes(mac);
+    if (macBytes.size() != 20) {
+        cerr << "Invalid MAC size." << endl;
+        return 1;
+    }
+
+    uint32_t nH0 = (static_cast<uint32_t>(macBytes[0]) << 24) | 
+                   (static_cast<uint32_t>(macBytes[1]) << 16) | 
+                   (static_cast<uint32_t>(macBytes[2]) << 8)  | 
+                    static_cast<uint32_t>(macBytes[3]);
+
+    uint32_t nH1 = (static_cast<uint32_t>(macBytes[4]) << 24) |
+                   (static_cast<uint32_t>(macBytes[5]) << 16) |
+                   (static_cast<uint32_t>(macBytes[6]) << 8) |
+                   static_cast<uint32_t>(macBytes[7]);
+
+    uint32_t nH2 = (static_cast<uint32_t>(macBytes[8]) << 24) |
+                   (static_cast<uint32_t>(macBytes[9]) << 16) |
+                   (static_cast<uint32_t>(macBytes[10]) << 8) |
+                   static_cast<uint32_t>(macBytes[11]);
+
+    uint32_t nH3 = (static_cast<uint32_t>(macBytes[12]) << 24) |
+                   (static_cast<uint32_t>(macBytes[13]) << 16) |
+                   (static_cast<uint32_t>(macBytes[14]) << 8) |
+                   static_cast<uint32_t>(macBytes[15]);
+
+    uint32_t nH4 = (static_cast<uint32_t>(macBytes[16]) << 24) | 
+                   (static_cast<uint32_t>(macBytes[17]) << 16) | 
+                   (static_cast<uint32_t>(macBytes[18]) << 8)  | 
+                    static_cast<uint32_t>(macBytes[19]);
+
+    for (int len = 0; len < 20; len++) {
+        if (len != key.length())
+            continue;
+
+        string preprocess = mdPad(message, len);
+        string forged_message = preprocess + admin;
+        string actual_mac = secretMAC(forged_message);
+
+        string temp_preprocess = mdPad(admin, 128);
+        string forgery = sha1(temp_preprocess, nH0, nH1, nH2, nH3, nH4);
+
+        if (forgery == actual_mac) {
+          cout << "FORGED !!!" << endl;
+          break;
+        }
+    }
 }
